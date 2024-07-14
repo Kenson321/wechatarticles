@@ -1,13 +1,3 @@
-# wechatarticles
-batch download articles in wechat, similar to crawer or spider.
-批量下载指定的微信公众号推送的所有文章，与爬虫的效果有点类似。
-
-# 详细介绍
-参考：https://kenson321.github.io/2024/06/23/WeChatSpidier/#more
-
-# 使用例子
-wechatarticles/main.go
-```
 package main 
 
 import (
@@ -58,11 +48,3 @@ func main() {
 		time.Sleep(time.Second * 10)
 	}
 }
-```
-
-# 执行方式
-windows下执行
-```
-go build
-./wechatarticles.exe
-```
