@@ -11,6 +11,11 @@ github.com/go-rod/rod/lib/launcher
 github.com/go-rod/rod/lib/launcher/flags
 github.com/go-rod/rod/lib/proto
 github.com/go-rod/rod/lib/utils
+# github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
+## explicit; go 1.13
+github.com/skip2/go-qrcode
+github.com/skip2/go-qrcode/bitset
+github.com/skip2/go-qrcode/reedsolomon
 # github.com/ysmood/fetchup v0.2.3
 ## explicit; go 1.20
 github.com/ysmood/fetchup
@@ -28,3 +33,9 @@ github.com/ysmood/gson
 github.com/ysmood/leakless
 github.com/ysmood/leakless/pkg/shared
 github.com/ysmood/leakless/pkg/utils
+# gopkg.in/alexcesaro/quotedprintable.v3 v3.0.0-20150716171945-2caba252f4dc
+## explicit
+gopkg.in/alexcesaro/quotedprintable.v3
+# gopkg.in/gomail.v2 v2.0.0-20160411212932-81ebce5c23df
+## explicit
+gopkg.in/gomail.v2

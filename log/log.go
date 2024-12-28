@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"runtime"
 )
 
 var debugLog *log.Logger
@@ -18,16 +19,16 @@ func init() {
 func SetDebug(flag bool, file string) {
 	lf, err := os.Create(file)
 	if err != nil {
-		fmt.Println("打开文件失败", err)
+		fmt.Println("鎵撳紑鏂囦欢澶辫触", err)
 	} else {
 		w := io.MultiWriter(os.Stderr, lf)
 		debugLog = log.New(w, "", log.LstdFlags)
 	}
 
 	debug = flag
-	if debug {
-		debugLog.SetFlags(debugLog.Flags() | log.Llongfile)
-	}
+	//	if debug {
+	//		debugLog.SetFlags(debugLog.Flags() | log.Lshortfile)
+	//	}
 }
 
 func Debug(v ...interface{}) {
@@ -42,6 +43,11 @@ func Info(v ...interface{}) {
 
 func Error(v ...interface{}) {
 	debugLog.Println("========== ========== ========== ==========")
-	debugLog.Println(v)
+	_, file, line, ok := runtime.Caller(1)
+	if !ok {
+		file = "???"
+		line = 0
+	}
+	debugLog.Println("----- ", file, line, " -----", v)
 	debugLog.Println("========== ========== ========== ==========")
 }

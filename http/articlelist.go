@@ -18,10 +18,11 @@ type fakeidResp struct {
 		code int    `json:"ret"`
 	} `json:"base_resp"`
 	List []struct {
-		Fakeid  string `json:"fakeid"`
+		Fakeid string `json:"fakeid"`
 	} `json:"list"`
 }
 
+//获取公众号source对应的id
 func GetFakeid(cookie, token, source string) (fakeid string) {
 	reqUrl := `https://mp.weixin.qq.com/cgi-bin/searchbiz`
 	agent := "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:126.0) Gecko/20100101 Firefox/126.0"
@@ -61,7 +62,7 @@ func GetFakeid(cookie, token, source string) (fakeid string) {
 	//	req.Header.Add("Accept-Encoding", "gzip, deflate, br, zstd")
 	req.Header.Add("X-Requested-With", "XMLHttpRequest")
 	req.Header.Add("Connection", "keep-alive")
-	timestamp:=fmt.Sprintf("%d", time.Now().UnixNano())
+	timestamp := fmt.Sprintf("%d", time.Now().UnixNano())
 	req.Header.Add("Referer", "https://mp.weixin.qq.com/cgi-bin/appmsg?t=media/appmsg_edit_v2&action=edit&isNew=1&type=77&share=1&token="+token+"&lang=zh_CN&timestamp="+timestamp)
 	req.Header.Add("Cookie", cookie)
 	req.Header.Add("Sec-Fetch-Dest", "empty")
@@ -98,29 +99,6 @@ func GetFakeid(cookie, token, source string) (fakeid string) {
 
 	return
 }
-
-//type ArticleList struct {
-//	Resp struct {
-//		Msg  string `json:"err_msg"`
-//		code int    `json:"ret"`
-//	} `json:"base_resp"`
-//	Page struct {
-//		List []struct {
-//			Info struct {
-//				Msg []struct {
-//					Title  string `json:"title"`
-//					Link   string `json:"link"`
-//					Time   int64  `json:"update_time"`
-//					Author string `json:"author_name"`
-//					Digest string `json:"digest"`
-//					Class  []struct {
-//						Title string `json:"title"`
-//					} `json:"appmsg_album_infos"`
-//				} `json:"appmsgex"`
-//			} `json:"publish_info"`
-//		} `json:"publish_list"`
-//	} `json:"publish_page"`
-//}
 
 type Response struct {
 	Resp struct {
@@ -166,6 +144,7 @@ type Article struct {
 	Content_hex string `json:"content"`
 }
 
+//获取公众号fakeid在begDay和endDay日期范围内的文章列表
 func GetArticleList(cookie, token, fakeid, begDay, endDay string) []Article {
 	log.Info("公众号：", fakeid)
 
@@ -182,7 +161,8 @@ func GetArticleList(cookie, token, fakeid, begDay, endDay string) []Article {
 			break
 		}
 		for _, art := range as {
-			t1, _ := time.Parse("2006-01-02 15:04:05.000", art.Ptime)
+			//			t1, _ := time.Parse("2006-01-02 15:04:05.000", art.Ptime) //出现了无效日期：1970-01-01
+			t1, _ := time.Parse("2006-01-02 15:04:05.000", art.Time)
 			if tb.Sub(t1) > 0 {
 				br = true
 				break
@@ -200,6 +180,7 @@ func GetArticleList(cookie, token, fakeid, begDay, endDay string) []Article {
 	return arts
 }
 
+//获取公众号fakeid的文章列表，一次5条推送，由begin指定起始序号，送0表示由第一条开始
 func getArticleList(cookie, token, fakeid, begin string) []Article {
 	reqUrl := `https://mp.weixin.qq.com/cgi-bin/appmsgpublish`
 	agent := "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:126.0) Gecko/20100101 Firefox/126.0"
@@ -241,6 +222,7 @@ func getArticleList(cookie, token, fakeid, begin string) []Article {
 	req.Header.Add("User-Agent", agent)
 	req.Header.Add("Accept", "*/*")
 	req.Header.Add("Accept-Language", "en-US,en;q=0.5")
+	//	req.Header.Add("Accept-Encoding", "gzip, deflate, br, zstd")
 	req.Header.Add("X-Requested-With", "XMLHttpRequest")
 	req.Header.Add("Connection", "keep-alive")
 	req.Header.Add("Referer", "https://mp.weixin.qq.com/cgi-bin/appmsgtemplate?action=edit&lang=zh_CN&token="+token)
@@ -249,6 +231,7 @@ func getArticleList(cookie, token, fakeid, begin string) []Article {
 	req.Header.Add("Sec-Fetch-Mode", "cors")
 	req.Header.Add("Sec-Fetch-Site", "same-origin")
 	req.Header.Add("Priority", "u=1")
+	//	req.Header.Add("TE", "trailers")
 
 	resp, err := client.Do(req)
 	if err != nil {

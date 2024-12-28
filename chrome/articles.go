@@ -9,14 +9,26 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 	"wechatarticles/log"
+	"wechatarticles/props"
+	"wechatarticles/mail"
 )
 
-func Visit(bin, baseDir, url string, onlyText bool) (content string) {
-	l := launcher.New().Headless(true).Bin(bin)
+const authpng = `auth.png`
+
+//获取url内的文章内容，onlyText为true表示只获取文字不获取图片，数据保存在props.Ppt.WorkDir目录下
+func Visit(url string, onlyText bool) (content string) {
+	l := launcher.New().Headless(true) //不打开浏览器
+	_, err := os.Stat(props.Ppt.Chrome)
+	if err != nil {
+		log.Error("未指定或未找到chrome执行程序：", props.Ppt.Chrome)
+	} else {
+		l.Bin(props.Ppt.Chrome) 
+	}
 	cc := l.MustLaunch()
 	browser := rod.New().ControlURL(cc).MustConnect()
 	defer browser.MustClose()
@@ -48,9 +60,9 @@ func Visit(bin, baseDir, url string, onlyText bool) (content string) {
 	log.Info(title)
 	log.Info(url)
 
-	dir := baseDir + title
+	dir := filepath.Join(props.Ppt.WorkDir, title)
 	os.MkdirAll(dir, os.ModeDir|os.ModePerm)
-	file, err := os.Create(baseDir + title + ".md")
+	file, err := os.Create(filepath.Join(props.Ppt.WorkDir, title + ".md"))
 	if err != nil {
 		if err != nil {
 			log.Error("生成文件失败", err)
@@ -78,9 +90,11 @@ func Visit(bin, baseDir, url string, onlyText bool) (content string) {
 
 var repeat string
 
-//深度遍历
+//深度遍历，以支持获取图片和保持顺序
+//文字保存在f所代表的markdown文件中
+//图片保存在dir目录下
+//title为目录相对路径名，用于在markdown文档中引用图片
 func deepVisit(e *rod.Element, f *os.File, dir string, title string) {
-
 	log.Debug(e.String())
 
 	text := e.MustText()
@@ -90,7 +104,7 @@ func deepVisit(e *rod.Element, f *os.File, dir string, title string) {
 		fmt.Fprintln(f, text)
 		repeat = text
 	}
-	
+
 	if strings.Contains(e.String(), "<img") {
 		var b []byte
 		s, _ := e.Attribute("src")
@@ -118,7 +132,7 @@ func deepVisit(e *rod.Element, f *os.File, dir string, title string) {
 		if len(b) > 0 {
 			rand.Seed(time.Now().UnixNano())
 			i := rand.Int31()
-			imgF := fmt.Sprintf("%s\\%d.png", dir, i)
+			imgF := filepath.Join(dir, fmt.Sprintf("%d.png", i))
 			err := utils.OutputFile(imgF, b)
 			if err != nil {
 				log.Error("生成图片失败：", err)
@@ -145,8 +159,17 @@ func deepVisit(e *rod.Element, f *os.File, dir string, title string) {
 	}
 }
 
-func GetAuth(bin, usr, pwd string) (token, cookie string) {
-	l := launcher.New().Headless(false).Bin(bin)
+//模拟登陆微信公众号平台
+//由于需要扫码登陆，可以在windows平台下打开浏览器，或者保存登陆二维码图片到当前目录下，通过打开图片扫码，又或者通过发送邮件的方式通知用户扫码授权
+func GetAuth() (token, cookie string) {
+	l := launcher.New()
+	_, err := os.Stat(props.Ppt.Chrome)
+	if err != nil {
+		log.Error("未指定或未找到chrome执行程序：", props.Ppt.Chrome)
+		l.Headless(true)
+	} else {
+		l.Headless(false).Bin(props.Ppt.Chrome) //打开浏览器以便扫码登陆
+	}
 	cc := l.MustLaunch()
 	browser := rod.New().ControlURL(cc).MustConnect()
 	defer browser.MustClose()
@@ -155,22 +178,21 @@ func GetAuth(bin, usr, pwd string) (token, cookie string) {
 	w.Add(1)
 	router := browser.HijackRequests()
 	f := func(ctx *rod.Hijack) {
-			ctx.MustLoadResponse()
-			
-			req := ctx.Request.Req()
-			cookie = fmt.Sprintf("%s", req.Header["Cookie"])
-			cookie = cookie[1:]
-			l := len(cookie)
-			cookie = cookie[:l-1]
-			log.Info("cookie: %s", cookie)
-			
-			token = ctx.Request.URL().String()
-			i := strings.LastIndex(token, "token=")
-			token = token[i+6:]
-			i = strings.IndexRune(token, '&')
-			token = token[:i]
-			log.Info("token: %s", token)
-			w.Done()
+		ctx.MustLoadResponse()
+
+		req := ctx.Request.Req()
+		cookie = fmt.Sprintf("%s", req.Header["Cookie"])
+		cookie = cookie[1:]
+		l := len(cookie)
+		cookie = cookie[:l-1]
+
+		token = ctx.Request.URL().String()
+		i := strings.LastIndex(token, "token=")
+		token = token[i+6:]
+		i = strings.IndexRune(token, '&')
+		token = token[:i]
+		
+		w.Done()
 	}
 	router.MustAdd("*/appmsgpublish*", f)
 	go router.Run()
@@ -182,13 +204,23 @@ func GetAuth(bin, usr, pwd string) (token, cookie string) {
 	el := page.MustElement("#header > div.banner > div > div > div.login__type__container.login__type__container__scan > a")
 	el.MustClick()
 	el = page.MustElement("#header > div.banner > div > div > div.login__type__container.login__type__container__account > form > div.login_input_panel > div:nth-child(1) > div > span > input")
-	el.MustInput(usr)
+	el.MustInput(props.Ppt.WechatUser)
 	el = page.MustElement("#header > div.banner > div > div > div.login__type__container.login__type__container__account > form > div.login_input_panel > div:nth-child(2) > div > span > input")
-	el.MustInput(pwd)
+	el.MustInput(props.Ppt.WechatPwd)
 	el = page.MustElement("#header > div.banner > div > div > div.login__type__container.login__type__container__account > form > div.login_btn_panel > a")
 	el.MustClick()
-	w.Wait()
+
 	page.MustWaitStable()
+	time.Sleep(time.Second * 3)
+	
+	log.Info("如果没有打开浏览器，可以打开本地文件扫码，或接收邮件扫码", authpng)
+	page.MustScreenshot(authpng)
+	if props.Ppt.SupportMail == true {
+		mail.SendAuth(`.`, authpng, props.Ppt.MailUser, props.Ppt.MailPwd)
+	}
+
+	w.Wait()
+	//	page.MustWaitStable()
 
 	return
 }
