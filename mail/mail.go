@@ -32,8 +32,7 @@ type Article struct {
 
 //通过邮件发送登陆二维码实现定时作业远程授权
 //二维码图片保存路径为dir+imageFN
-//邮箱用户名密码为userName, password
-func SendAuth(dir, imageFN, userName, password string) {
+func SendAuth(dir, imageFN string) {
 
 	ct, err := template.New("mail").Parse(`
 <p>您好</p>
@@ -59,19 +58,16 @@ func SendAuth(dir, imageFN, userName, password string) {
 	images := []string{filepath.Join(dir, imageFN)}
 
 	subj := "会话到期"
-	mailTo := []string{props.Ppt.MailTO[0]}
-	mailCC := []string{props.Ppt.MailBCC[0]}
+	mailCC := []string{}
 	mailBCC := []string{}
 
-	send163(userName, password, subj, message, mailTo, mailCC, mailBCC, images, nil)
+	send163(props.Ppt.MailUser, props.Ppt.MailPwd, subj, message, props.Ppt.MailAuthTO, mailCC, mailBCC, images, nil)
 }
 
 //通过邮件发送爬虫结果
-//爬虫结果需以json文件的形式保存在路径dir + jsonFN的文件中
-//邮箱用户名密码为userName, password
-//附件由attachments指定
-func SendResult(dir, jsonFN, userName, password string, attachments []string) {
-	jsonF, err := os.Open(filepath.Join(dir, jsonFN))
+//爬虫结果需以json文件的形式保存在路径props.Ppt.WorkDir + props.Ppt.JsonFN的文件中
+func SendResult() {
+	jsonF, err := os.Open(filepath.Join(props.Ppt.WorkDir, props.Ppt.JsonFN))
 	if err != nil {
 		log.Error("打开文件失败", err)
 	}
@@ -91,7 +87,7 @@ func SendResult(dir, jsonFN, userName, password string, attachments []string) {
 
 	images := make([]string, len(articles), len(articles))
 	for n, art := range articles {
-		img := filepath.Join(dir, fmt.Sprintf("%d%s", n, `.png`))
+		img := filepath.Join(props.Ppt.WorkDir, fmt.Sprintf("%d%s", n, `.png`))
 		images[n] = img
 		art.QrCodeFN = fmt.Sprintf("%d%s", n, `.png`)
 
@@ -106,7 +102,6 @@ func SendResult(dir, jsonFN, userName, password string, attachments []string) {
 		}
 
 		keys := []string{}
-		keys = append(keys, props.Ppt.MailKeys...)
 		for _, src := range props.Ppt.Sources {
 			if strings.EqualFold(src.Tag, art.Tag) {
 				keys = append(keys, src.HighlightMailWords...)
@@ -125,9 +120,9 @@ func SendResult(dir, jsonFN, userName, password string, attachments []string) {
 <p style="text-indent:2em">公众号信息汇总如下，扫码查看原文：</P>
 
 <table>
-<tr align="left"><th>公众号</th><th>标题</th><th>分类</th><th>摘要</th></tr>
+<tr align="left"><th>公众号</th><th>标题</th><th>分类</th><th>摘要</th><th>链接</th></tr>
 {{range .}}
-<tr align="left"><td width="10%">{{.Source}}</td><td width="40%">{{.Title}}<br><img src="cid:{{.QrCodeFN}}" /></td><td width="10%">{{.Class}}</td><td width="40%">{{.Digest}}</td></tr>
+<tr align="left"><td width="10%">{{.Source}}</td><td width="30%">{{.Title}}</td><td width="10%">{{.Class}}</td><td width="30%">{{.Digest}}</td><td width="20%"><a href="{{.Link}}">{{.Link}}</a><br><img src="cid:{{.QrCodeFN}}" /></td></tr>
 {{end}}
 <table>
 
@@ -148,7 +143,11 @@ func SendResult(dir, jsonFN, userName, password string, attachments []string) {
 	message = strings.ReplaceAll(message, BOLD_PREFIX, `<font color="#FF0000">`)
 	message = strings.ReplaceAll(message, BOLD_SUFIX, `</font>`)
 
-	send163(userName, password, props.Ppt.MailSubj, message, props.Ppt.MailTO, props.Ppt.MailCC, props.Ppt.MailBCC, images, attachments)
+	attachments := []string{filepath.Join(props.Ppt.WorkDir, props.Ppt.JsonFN)}
+	if len(props.Ppt.TxtFN) > 0 {
+		attachments = append(attachments, filepath.Join(props.Ppt.WorkDir, props.Ppt.TxtFN))
+	}
+	send163(props.Ppt.MailUser, props.Ppt.MailPwd, props.Ppt.MailSubj, message, props.Ppt.MailTO, props.Ppt.MailCC, props.Ppt.MailBCC, images, attachments)
 }
 
 //go get -v gopkg.in/gomail.v2
@@ -160,8 +159,9 @@ func send163(userName, password, subj, message string, mailTo, mailCC, mailBCC, 
 
 	m := gomail.NewMessage()
 
-	m.SetHeader("From", userName) // 发件人
-	//	m.SetHeader("From", "alias"+"<"+userName+">") // 增加发件人别名
+	m.SetAddressHeader("From", userName, "信息搜集") // 增加发件人别名（支持中文）
+//	m.SetHeader("From", userName) // 发件人
+//	m.SetHeader("From", "WechatArticles"+"<"+userName+">") // 增加发件人别名（不支持中文）
 	m.SetHeader("To", mailTo...)   // 收件人，可以多个收件人，但必须使用相同的 SMTP 连接
 	m.SetHeader("Cc", mailCC...)   // 抄送，可以多个
 	m.SetHeader("Bcc", mailBCC...) // 暗送，可以多个
@@ -189,6 +189,7 @@ func send163(userName, password, subj, message string, mailTo, mailCC, mailBCC, 
 	)
 	// 关闭SSL协议认证
 	d.TLSConfig = &tls.Config{InsecureSkipVerify: true}
+	log.Info("发送邮件")
 	err := d.DialAndSend(m)
 	if err != nil {
 		log.Error("发送邮件失败", err, subj)

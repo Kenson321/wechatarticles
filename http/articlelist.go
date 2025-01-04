@@ -70,6 +70,7 @@ func GetFakeid(cookie, token, source string) (fakeid string) {
 	req.Header.Add("Sec-Fetch-Site", "same-origin")
 	req.Header.Add("Priority", "u=0")
 
+	log.Info("获取公众号对应的id：", req.RequestURI)
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Error("发送https请求失败：", err)
@@ -233,6 +234,7 @@ func getArticleList(cookie, token, fakeid, begin string) []Article {
 	req.Header.Add("Priority", "u=1")
 	//	req.Header.Add("TE", "trailers")
 
+	log.Info("获取公众号的文章列表：", begin, req.RequestURI)
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Error("发送https请求失败：", err)

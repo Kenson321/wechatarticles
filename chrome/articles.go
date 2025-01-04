@@ -14,20 +14,20 @@ import (
 	"sync"
 	"time"
 	"wechatarticles/log"
-	"wechatarticles/props"
 	"wechatarticles/mail"
+	"wechatarticles/props"
 )
 
 const authpng = `auth.png`
 
-//获取url内的文章内容，onlyText为true表示只获取文字不获取图片，数据保存在props.Ppt.WorkDir目录下
-func Visit(url string, onlyText bool) (content string) {
+//获取url内的文章内容，数据保存在props.Ppt.WorkDir目录下的新目录中
+func Visit(url string) (content string) {
 	l := launcher.New().Headless(true) //不打开浏览器
 	_, err := os.Stat(props.Ppt.Chrome)
 	if err != nil {
 		log.Error("未指定或未找到chrome执行程序：", props.Ppt.Chrome)
 	} else {
-		l.Bin(props.Ppt.Chrome) 
+		l.Bin(props.Ppt.Chrome)
 	}
 	cc := l.MustLaunch()
 	browser := rod.New().ControlURL(cc).MustConnect()
@@ -35,6 +35,7 @@ func Visit(url string, onlyText bool) (content string) {
 
 	page := browser.MustPage(url)
 	page.MustWaitStable()
+	log.Info("打开网页：", url)
 
 	exists, el, err := page.HasX(`//*[@id="activity-name"]`)
 	if err != nil {
@@ -57,12 +58,11 @@ func Visit(url string, onlyText bool) (content string) {
 	title = strings.ReplaceAll(title, `\`, "_")
 	title = strings.ReplaceAll(title, `<`, "_")
 	title = strings.ReplaceAll(title, `>`, "_")
-	log.Info(title)
-	log.Info(url)
+	log.Info("格式化后的标题：", title)
 
 	dir := filepath.Join(props.Ppt.WorkDir, title)
 	os.MkdirAll(dir, os.ModeDir|os.ModePerm)
-	file, err := os.Create(filepath.Join(props.Ppt.WorkDir, title + ".md"))
+	file, err := os.Create(filepath.Join(props.Ppt.WorkDir, title+".md"))
 	if err != nil {
 		if err != nil {
 			log.Error("生成文件失败", err)
@@ -73,16 +73,15 @@ func Visit(url string, onlyText bool) (content string) {
 	fmt.Fprintln(file, url)
 	fmt.Fprintln(file, "")
 
-	//一次获取所有文字
-	el = page.MustElement("#js_article")
-	content = el.MustText()
-	content = strings.Join(strings.Fields(content), " ")
-
-	if onlyText {
-		fmt.Fprintln(file, content)
-	} else {
+	if props.Ppt.Image {
 		els := page.MustElementsX("//div[@id='js_content']/*")
 		deepVisit(els[0], file, dir, title)
+	} else {
+		//一次获取所有文字
+		el = page.MustElement("#js_article")
+		content = el.MustText()
+		content = strings.Join(strings.Fields(content), " ")
+		fmt.Fprintln(file, content)
 	}
 
 	return
@@ -191,7 +190,7 @@ func GetAuth() (token, cookie string) {
 		token = token[i+6:]
 		i = strings.IndexRune(token, '&')
 		token = token[:i]
-		
+
 		w.Done()
 	}
 	router.MustAdd("*/appmsgpublish*", f)
@@ -212,11 +211,11 @@ func GetAuth() (token, cookie string) {
 
 	page.MustWaitStable()
 	time.Sleep(time.Second * 3)
-	
+
 	log.Info("如果没有打开浏览器，可以打开本地文件扫码，或接收邮件扫码", authpng)
 	page.MustScreenshot(authpng)
 	if props.Ppt.SupportMail == true {
-		mail.SendAuth(`.`, authpng, props.Ppt.MailUser, props.Ppt.MailPwd)
+		mail.SendAuth(`.`, authpng)
 	}
 
 	w.Wait()
