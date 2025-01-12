@@ -16,8 +16,8 @@ import (
 	"wechatarticles/props"
 )
 
-const BOLD_PREFIX = `ABCDEFG`
-const BOLD_SUFIX = `HIJKLMN`
+const BOLD_PREFIX = `BOLD_PREFIX`
+const BOLD_SUFIX = `BOLD_SUFIX`
 
 type Article struct {
 	Source   string `json:"source"`
@@ -28,6 +28,28 @@ type Article struct {
 	Digest   string `json:"digest"`
 	Class    string `json:"class"`
 	QrCodeFN string `json:"-"`
+}
+
+//发送日志（后台运行出错，通过邮件发送日志以便进行分析）
+func SendLog(subj string) {
+	if props.Ppt.SupportMail == false || len(props.Ppt.MailAuthTO) <= 0 {
+		return
+	}
+
+	message := `
+<p>您好</p>
+
+<p style="text-indent:2em">公众号后台作业运行中断，日志见附件</P>
+
+<p style="text-indent:2em">祝好</P>
+`
+	images := []string{}
+	attachments := []string{filepath.Join(props.Ppt.WorkDir, props.Ppt.LogFN), filepath.Join(props.Ppt.WorkDir, props.Ppt.TJsonFN)}
+
+	mailCC := []string{}
+	mailBCC := []string{}
+
+	send163(props.Ppt.MailUser, props.Ppt.MailPwd, subj, message, props.Ppt.MailAuthTO, mailCC, mailBCC, images, attachments)
 }
 
 //通过邮件发送登陆二维码实现定时作业远程授权

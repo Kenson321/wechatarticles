@@ -13,7 +13,7 @@ V0.0.3 属于稳定的工具版本，可以作为后台定时任务执行
 wechatarticles/main.go
 
 # 执行方式
-修改"参数.wechat"文件中的用户名密码以及公众号列表等参数，然后执行如下命令（windows为例）
+修改"wechat.properties"文件中的用户名密码以及公众号列表等参数，然后执行如下命令（windows为例）
 ```
 go build
 ./wechatarticles.exe

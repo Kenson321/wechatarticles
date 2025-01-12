@@ -167,7 +167,11 @@ func GetAuth() (token, cookie string) {
 		log.Error("未指定或未找到chrome执行程序：", props.Ppt.Chrome)
 		l.Headless(true)
 	} else {
-		l.Headless(false).Bin(props.Ppt.Chrome) //打开浏览器以便扫码登陆
+		if len(props.Ppt.MailAuthTO) > 0 { //发送邮件则不打开浏览器扫码登陆
+			l.Headless(true).Bin(props.Ppt.Chrome)
+		} else { //打开浏览器以便扫码登陆
+			l.Headless(false).Bin(props.Ppt.Chrome)
+		}
 	}
 	cc := l.MustLaunch()
 	browser := rod.New().ControlURL(cc).MustConnect()
@@ -214,7 +218,7 @@ func GetAuth() (token, cookie string) {
 
 	log.Info("如果没有打开浏览器，可以打开本地文件扫码，或接收邮件扫码", authpng)
 	page.MustScreenshot(authpng)
-	if props.Ppt.SupportMail == true {
+	if props.Ppt.SupportMail == true && len(props.Ppt.MailAuthTO) > 0 {
 		mail.SendAuth(`.`, authpng)
 	}
 

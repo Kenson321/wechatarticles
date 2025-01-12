@@ -13,8 +13,8 @@ import (
 	"wechatarticles/log"
 )
 
-const propFileName = "参数.wechat"
-const cacheFileName = "缓存.wechat"
+const propFileName = "wechat.properties"
+const cacheFileName = "wechat.cache"
 
 func init() {
 	initProps()
@@ -24,6 +24,7 @@ func init() {
 type Properties struct {
 	Chrome      string   `json:"chrome"`   //本地的chrome执行程序
 	Debug       bool     `json:"debug"`    //输出debug日志
+	LogFN       string   `json:"logfn"`    //日志文件
 	BaseDir     string   `json:"bdir"`     //主目录
 	WorkDir     string   `json:"wdir"`     //工作目录，不指定时支持在主目录下动态创建，指定时则无需指定主目录
 	JsonFN      string   `json:"jsonfn"`   //爬虫结果文件，以json文件的形式保存
@@ -62,6 +63,7 @@ func initProps() {
 	Ppt = &Properties{
 		Chrome:      `C:\Program Files\Google\Chrome\Application\chrome.exe`,
 		Debug:       true,
+		LogFN:       `日志.log`,
 		BaseDir:     `D:\`,
 		WorkDir:     ``,
 		JsonFN:      `内容.json`,
@@ -133,7 +135,7 @@ func initProps() {
 			Ppt.WorkDir = filepath.Join(Ppt.BaseDir, fmt.Sprintf("爬虫%s(%s_%s)", time.Now().Format("2006-01-02"), Ppt.BeginDay, Ppt.EdnDay))
 		}
 	}
-
+	
 	for _, src := range Ppt.Sources {
 		src.HighlightMailWords = append(src.HighlightMailWords, Ppt.MailKeys...)
 	}
