@@ -2,9 +2,6 @@ package chrome
 
 import (
 	"fmt"
-	"github.com/go-rod/rod"
-	"github.com/go-rod/rod/lib/launcher"
-	"github.com/go-rod/rod/lib/utils"
 	"io/ioutil"
 	"math/rand"
 	"net/http"
@@ -16,11 +13,15 @@ import (
 	"wechatarticles/log"
 	"wechatarticles/mail"
 	"wechatarticles/props"
+
+	"github.com/go-rod/rod"
+	"github.com/go-rod/rod/lib/launcher"
+	"github.com/go-rod/rod/lib/utils"
 )
 
 const authpng = `auth.png`
 
-//获取url内的文章内容，数据保存在props.Ppt.WorkDir目录下的新目录中
+// 获取url内的文章内容，数据保存在props.Ppt.WorkDir目录下的新目录中
 func Visit(url string) (content string) {
 	l := launcher.New().Headless(true) //不打开浏览器
 	_, err := os.Stat(props.Ppt.Chrome)
@@ -34,8 +35,19 @@ func Visit(url string) (content string) {
 	defer browser.MustClose()
 
 	page := browser.MustPage(url)
-	page.MustWaitStable()
-	log.Info("打开网页：", url)
+
+	done := make(chan bool)
+	go func() {
+		page.MustWaitStable()
+		done <- true
+	}()
+	select {
+	case <-done:
+		log.Info("打开网页成功：", url)
+	case <-time.After(time.Second * 5):
+		log.Error("打开网页超时：", url)
+		//		mail.SendLog("打开网页超时，尝试继续")
+	}
 
 	exists, el, err := page.HasX(`//*[@id="activity-name"]`)
 	if err != nil {
@@ -89,10 +101,10 @@ func Visit(url string) (content string) {
 
 var repeat string
 
-//深度遍历，以支持获取图片和保持顺序
-//文字保存在f所代表的markdown文件中
-//图片保存在dir目录下
-//title为目录相对路径名，用于在markdown文档中引用图片
+// 深度遍历，以支持获取图片和保持顺序
+// 文字保存在f所代表的markdown文件中
+// 图片保存在dir目录下
+// title为目录相对路径名，用于在markdown文档中引用图片
 func deepVisit(e *rod.Element, f *os.File, dir string, title string) {
 	log.Debug(e.String())
 
@@ -158,8 +170,8 @@ func deepVisit(e *rod.Element, f *os.File, dir string, title string) {
 	}
 }
 
-//模拟登陆微信公众号平台
-//由于需要扫码登陆，可以在windows平台下打开浏览器，或者保存登陆二维码图片到当前目录下，通过打开图片扫码，又或者通过发送邮件的方式通知用户扫码授权
+// 模拟登陆微信公众号平台
+// 由于需要扫码登陆，可以在windows平台下打开浏览器，或者保存登陆二维码图片到当前目录下，通过打开图片扫码，又或者通过发送邮件的方式通知用户扫码授权
 func GetAuth() (token, cookie string) {
 	l := launcher.New()
 	_, err := os.Stat(props.Ppt.Chrome)

@@ -30,7 +30,7 @@ func crawl() {
 		if err != nil {
 			panic(err)
 		}
-		defer jsonF.Close()
+		defer txtF.Close()
 	}
 
 	tmpJF, err := os.Create(filepath.Join(props.Ppt.WorkDir, props.Ppt.TJsonFN))
@@ -41,7 +41,7 @@ func crawl() {
 
 	cookie := props.CachePpt.Cookie
 	token := props.CachePpt.Token
-	fakeid := http.GetFakeid(cookie, token, "逻辑思维")
+	fakeid, _ := http.GetFakeid(cookie, token, "逻辑思维")
 	if len(fakeid) != len("MjM5NjAxOTU4MA==") {
 		log.Info("token, cookie 已过期，将重新获取并更新本地缓存记录")
 		//超时重试3次
@@ -63,6 +63,7 @@ func crawl() {
 			}
 		}
 		if !suc {
+			time.Sleep(time.Second * 60 * 10)
 			mail.SendLog("扫码授权邮件超时失败")
 			os.Exit(1)
 		}
@@ -77,9 +78,17 @@ func crawl() {
 		for _, name := range src.Names {
 			if len(props.CachePpt.FakeIds[name]) < 1 {
 				log.Info("新增缓存fakeid记录", name)
-				fakeid := http.GetFakeid(cookie, token, name)
+				time.Sleep(time.Second * 1)
+				fakeid, sig := http.GetFakeid(cookie, token, name)
+				if len(fakeid) < 1 {
+					if updateCache {
+						props.UpdateCacheFile()
+					}
+					mail.SendLog("获取fakeid失败")
+					os.Exit(1)
+				}
 				props.CachePpt.FakeIds[name] = fakeid
-				props.CachePpt.NameFakeIds = append(props.CachePpt.NameFakeIds, props.NameId{Name: name, FakeId: fakeid})
+				props.CachePpt.NameFakeIds = append(props.CachePpt.NameFakeIds, props.NameId{Name: name, FakeId: fakeid, Info: sig})
 				updateCache = true
 			}
 		}
@@ -109,8 +118,9 @@ func crawl() {
 
 				if src.MustMatch { //标题和内容必须包含关键字才需要记录
 					match := false
-					for _, kw := range src.HighlightMailWords {
-						if strings.Contains(art.Title, kw) || strings.Contains(art.Content, kw) {
+					for _, kw := range src.MustKeys {
+						//if strings.Contains(art.Title, kw) || strings.Contains(art.Content, kw) {
+						if strings.Contains(art.Title, kw) {
 							match = true
 							break
 						}
@@ -150,6 +160,7 @@ func crawl() {
 	var bb bytes.Buffer
 	json.Indent(&bb, js, "", "\t")
 	fmt.Fprintln(jsonF, bb.String())
+
 }
 
 func main() {

@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+
 	//	"strings"
 	"time"
 	"wechatarticles/log"
@@ -18,12 +19,13 @@ type fakeidResp struct {
 		code int    `json:"ret"`
 	} `json:"base_resp"`
 	List []struct {
-		Fakeid string `json:"fakeid"`
+		Fakeid    string `json:"fakeid"`
+		Signature string `json:"signature"`
 	} `json:"list"`
 }
 
-//获取公众号source对应的id
-func GetFakeid(cookie, token, source string) (fakeid string) {
+// 获取公众号source对应的id
+func GetFakeid(cookie, token, source string) (fakeid, sig string) {
 	reqUrl := `https://mp.weixin.qq.com/cgi-bin/searchbiz`
 	agent := "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:126.0) Gecko/20100101 Firefox/126.0"
 
@@ -95,6 +97,7 @@ func GetFakeid(cookie, token, source string) (fakeid string) {
 
 	for _, fid := range fidResp.List {
 		fakeid = fid.Fakeid
+		sig = fid.Signature
 		return
 	}
 
@@ -143,9 +146,10 @@ type Article struct {
 	Class       string `json:"class"`
 	Content     string `json:"-"`
 	Content_hex string `json:"content"`
+	QrCodeFN    string `json:"-"`
 }
 
-//获取公众号fakeid在begDay和endDay日期范围内的文章列表
+// 获取公众号fakeid在begDay和endDay日期范围内的文章列表
 func GetArticleList(cookie, token, fakeid, begDay, endDay string) []Article {
 	log.Info("公众号：", fakeid)
 
@@ -154,13 +158,13 @@ func GetArticleList(cookie, token, fakeid, begDay, endDay string) []Article {
 
 	arts := make([]Article, 0, 25)
 	count := 0
-	br := false
 	for true {
 		begin := fmt.Sprintf("%d", count)
 		as := getArticleList(cookie, token, fakeid, begin)
 		if as == nil {
 			break
 		}
+		br := true
 		for _, art := range as {
 			//			t1, _ := time.Parse("2006-01-02 15:04:05.000", art.Ptime) //出现了无效日期：1970-01-01
 			t1, _ := time.Parse("2006-01-02 15:04:05.000", art.Time)
@@ -170,6 +174,7 @@ func GetArticleList(cookie, token, fakeid, begDay, endDay string) []Article {
 			}
 			if te.Sub(t1) > 0 {
 				arts = append(arts, art)
+				br = false
 			}
 		}
 		if br {
@@ -181,7 +186,7 @@ func GetArticleList(cookie, token, fakeid, begDay, endDay string) []Article {
 	return arts
 }
 
-//获取公众号fakeid的文章列表，一次5条推送，由begin指定起始序号，送0表示由第一条开始
+// 获取公众号fakeid的文章列表，一次5条推送，由begin指定起始序号，送0表示由第一条开始
 func getArticleList(cookie, token, fakeid, begin string) []Article {
 	reqUrl := `https://mp.weixin.qq.com/cgi-bin/appmsgpublish`
 	agent := "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:126.0) Gecko/20100101 Firefox/126.0"

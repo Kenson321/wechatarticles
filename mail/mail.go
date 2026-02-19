@@ -5,32 +5,26 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"github.com/skip2/go-qrcode"
-	"gopkg.in/gomail.v2"
 	"html/template"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
+	"wechatarticles/excel"
+	"wechatarticles/http"
 	"wechatarticles/log"
+	"wechatarticles/pdf"
 	"wechatarticles/props"
+
+	"github.com/skip2/go-qrcode"
+	"gopkg.in/gomail.v2"
 )
 
+// 红色字体替换
 const BOLD_PREFIX = `BOLD_PREFIX`
 const BOLD_SUFIX = `BOLD_SUFIX`
 
-type Article struct {
-	Source   string `json:"source"`
-	Tag      string `json:"tag"`
-	Title    string `json:"title"`
-	Link     string `json:"link"`
-	Time     string `json:"time"`
-	Digest   string `json:"digest"`
-	Class    string `json:"class"`
-	QrCodeFN string `json:"-"`
-}
-
-//发送日志（后台运行出错，通过邮件发送日志以便进行分析）
+// 发送日志（后台运行出错，通过邮件发送日志以便进行分析）
 func SendLog(subj string) {
 	if props.Ppt.SupportMail == false || len(props.Ppt.MailAuthTO) <= 0 {
 		return
@@ -52,8 +46,8 @@ func SendLog(subj string) {
 	send163(props.Ppt.MailUser, props.Ppt.MailPwd, subj, message, props.Ppt.MailAuthTO, mailCC, mailBCC, images, attachments)
 }
 
-//通过邮件发送登陆二维码实现定时作业远程授权
-//二维码图片保存路径为dir+imageFN
+// 通过邮件发送登陆二维码实现定时作业远程授权
+// 二维码图片保存路径为dir+imageFN
 func SendAuth(dir, imageFN string) {
 
 	ct, err := template.New("mail").Parse(`
@@ -86,9 +80,9 @@ func SendAuth(dir, imageFN string) {
 	send163(props.Ppt.MailUser, props.Ppt.MailPwd, subj, message, props.Ppt.MailAuthTO, mailCC, mailBCC, images, nil)
 }
 
-//通过邮件发送爬虫结果
-//爬虫结果需以json文件的形式保存在路径props.Ppt.WorkDir + props.Ppt.JsonFN的文件中
-func SendResult() {
+// 爬虫结果需以json文件的形式保存在路径props.Ppt.WorkDir + props.Ppt.JsonFN的文件中
+func initResult() ([]*http.Article, []string) {
+	//从json文件解析对象
 	jsonF, err := os.Open(filepath.Join(props.Ppt.WorkDir, props.Ppt.JsonFN))
 	if err != nil {
 		log.Error("打开文件失败", err)
@@ -100,42 +94,75 @@ func SendResult() {
 		log.Error("读取文件失败：", err)
 	}
 
-	var articles []*Article
+	var articles []*http.Article
 	err = json.Unmarshal(b, &articles)
 	if err != nil {
 		log.Error("解析json失败", err)
-		return
+		return nil, nil
 	}
 
+	//二维码
 	images := make([]string, len(articles), len(articles))
 	for n, art := range articles {
-		img := filepath.Join(props.Ppt.WorkDir, fmt.Sprintf("%d%s", n, `.png`))
-		images[n] = img
 		art.QrCodeFN = fmt.Sprintf("%d%s", n, `.png`)
+		images[n] = filepath.Join(props.Ppt.WorkDir, art.QrCodeFN)
 
 		qr, err := qrcode.New(art.Link, qrcode.Low)
 		if err != nil {
 			log.Error("生成二维码失败", err)
 		}
 
-		err = qr.WriteFile(128, img)
+		err = qr.WriteFile(128, images[n])
 		if err != nil {
 			log.Error("生成二维码图片失败", err)
 		}
+	}
+	return articles, images
+}
 
-		keys := []string{}
+// 通过邮件发送爬虫结果
+func SendResult() {
+	articles, images := initResult()
+
+	arts := make([]http.Article, len(articles))
+	for i, ptr := range articles {
+		arts[i] = *ptr
+	}
+
+	if len(props.Ppt.ExcelFN) > 0 {
+		excel.Write(arts)
+	}
+
+	//txt excel
+	sendByMail(articles, images)
+	//pdf
+	sendBySecret(articles)
+	//json
+	send2Operator()
+}
+
+func sendByMail(articles []*http.Article, images []string) {
+	//红色字体
+	for _, art := range articles {
+		set := make(map[string]struct{})
+		for _, key := range props.Ppt.MailKeys {
+			set[key] = struct{}{}
+		}
 		for _, src := range props.Ppt.Sources {
 			if strings.EqualFold(src.Tag, art.Tag) {
-				keys = append(keys, src.HighlightMailWords...)
+				for _, key := range src.MustKeys {
+					set[key] = struct{}{}
+				}
 			}
 		}
-		for _, key := range keys {
+		for key := range set {
 			art.Title = strings.ReplaceAll(art.Title, key, BOLD_PREFIX+key+BOLD_SUFIX)
 			art.Digest = strings.ReplaceAll(art.Digest, key, BOLD_PREFIX+key+BOLD_SUFIX)
 			art.Class = strings.ReplaceAll(art.Class, key, BOLD_PREFIX+key+BOLD_SUFIX)
 		}
 	}
 
+	//邮件正文
 	ct, err := template.New("mail").Parse(`
 <p>你好</p>
 
@@ -161,18 +188,70 @@ func SendResult() {
 		return
 	}
 
+	//红色字体
 	message := msg.String()
 	message = strings.ReplaceAll(message, BOLD_PREFIX, `<font color="#FF0000">`)
 	message = strings.ReplaceAll(message, BOLD_SUFIX, `</font>`)
 
-	attachments := []string{filepath.Join(props.Ppt.WorkDir, props.Ppt.JsonFN)}
+	//附件
+	attachments := []string{}
 	if len(props.Ppt.TxtFN) > 0 {
 		attachments = append(attachments, filepath.Join(props.Ppt.WorkDir, props.Ppt.TxtFN))
 	}
+	if len(props.Ppt.ExcelFN) > 0 {
+		attachments = append(attachments, filepath.Join(props.Ppt.WorkDir, props.Ppt.ExcelFN))
+	}
+
+	//邮件发送
 	send163(props.Ppt.MailUser, props.Ppt.MailPwd, props.Ppt.MailSubj, message, props.Ppt.MailTO, props.Ppt.MailCC, props.Ppt.MailBCC, images, attachments)
 }
 
-//go get -v gopkg.in/gomail.v2
+// 对于存在邮件拦截的，通过pdf发送
+func sendBySecret(articles []*http.Article) {
+	if len(props.Ppt.MailPdfTO) == 0 || len(props.Ppt.PdfFN) == 0 {
+		return
+	}
+
+	//邮件正文
+	message := `
+<p>你好</p>
+
+<p style="text-indent:2em">公众号信息汇总见附件。</P>
+
+
+<p style="text-indent:2em">祝好</P>
+`
+
+	//红色字体已经由前面的方法处理了
+	pdf.Write(articles, BOLD_PREFIX, BOLD_SUFIX)
+
+	//附件
+	attachments := []string{filepath.Join(props.Ppt.WorkDir, props.Ppt.PdfFN)}
+
+	//邮件发送
+	send163(props.Ppt.MailUser, props.Ppt.MailPwd, props.Ppt.MailSubj, message, props.Ppt.MailPdfTO, props.Ppt.MailCC, props.Ppt.MailBCC, nil, attachments)
+}
+
+// 发送管理员
+func send2Operator() {
+	//邮件正文
+	message := `
+<p>你好</p>
+
+<p style="text-indent:2em">公众号信息汇总见附件。</P>
+
+
+<p style="text-indent:2em">祝好</P>
+`
+
+	//附件
+	attachments := []string{filepath.Join(props.Ppt.WorkDir, props.Ppt.JsonFN)}
+
+	//邮件发送
+	send163(props.Ppt.MailUser, props.Ppt.MailPwd, props.Ppt.MailSubj, message, props.Ppt.MailAuthTO, nil, nil, nil, attachments)
+}
+
+// go get -v gopkg.in/gomail.v2
 func send163(userName, password, subj, message string, mailTo, mailCC, mailBCC, images, attachments []string) {
 	// 163 邮箱：
 	// SMTP 服务器地址：smtp.163.com（端口：25）
@@ -182,8 +261,8 @@ func send163(userName, password, subj, message string, mailTo, mailCC, mailBCC, 
 	m := gomail.NewMessage()
 
 	m.SetAddressHeader("From", userName, "信息搜集") // 增加发件人别名（支持中文）
-//	m.SetHeader("From", userName) // 发件人
-//	m.SetHeader("From", "WechatArticles"+"<"+userName+">") // 增加发件人别名（不支持中文）
+	//	m.SetHeader("From", userName) // 发件人
+	//	m.SetHeader("From", "WechatArticles"+"<"+userName+">") // 增加发件人别名（不支持中文）
 	m.SetHeader("To", mailTo...)   // 收件人，可以多个收件人，但必须使用相同的 SMTP 连接
 	m.SetHeader("Cc", mailCC...)   // 抄送，可以多个
 	m.SetHeader("Bcc", mailBCC...) // 暗送，可以多个
