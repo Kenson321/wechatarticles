@@ -1,6 +1,7 @@
 package chrome
 
 import (
+	"crypto/tls"
 	"fmt"
 	"io/ioutil"
 	"math/rand"
@@ -36,18 +37,7 @@ func Visit(url string) (content string) {
 
 	page := browser.MustPage(url)
 
-	done := make(chan bool)
-	go func() {
-		page.MustWaitStable()
-		done <- true
-	}()
-	select {
-	case <-done:
-		log.Info("打开网页成功：", url)
-	case <-time.After(time.Second * 5):
-		log.Error("打开网页超时：", url)
-		//		mail.SendLog("打开网页超时，尝试继续")
-	}
+	page.WaitStable(time.Second * 5)
 
 	exists, el, err := page.HasX(`//*[@id="activity-name"]`)
 	if err != nil {
@@ -117,42 +107,7 @@ func deepVisit(e *rod.Element, f *os.File, dir string, title string) {
 	}
 
 	if strings.Contains(e.String(), "<img") {
-		var b []byte
-		s, _ := e.Attribute("src")
-		log.Info("图片：", *s)
-		if strings.HasPrefix(*s, "http") {
-			b = e.MustResource()
-		} else {
-			s, _ = e.Attribute("data-src")
-			if s == nil {
-				s = new(string)
-			}
-			log.Info("图片：", *s)
-			if strings.HasPrefix(*s, "http") {
-				res, err := http.Get(*s)
-				if err != nil {
-					log.Error("http发送失败：", err)
-				}
-				defer res.Body.Close()
-				b, err = ioutil.ReadAll(res.Body)
-				if err != nil {
-					log.Error("http读取结果失败：", err)
-				}
-			}
-		}
-		if len(b) > 0 {
-			rand.Seed(time.Now().UnixNano())
-			i := rand.Int31()
-			imgF := filepath.Join(dir, fmt.Sprintf("%d.png", i))
-			err := utils.OutputFile(imgF, b)
-			if err != nil {
-				log.Error("生成图片失败：", err)
-			} else {
-				log.Info("生成图片：", imgF)
-			}
-			fmt.Fprintf(f, "![%d](.\\%s\\%d.jpg)\n", i, title, i)
-			fmt.Fprintf(f, "%s\n", *s)
-		}
+		image(e, f, dir)
 	}
 
 	ne, err := e.ElementX("*")
@@ -167,6 +122,95 @@ func deepVisit(e *rod.Element, f *os.File, dir string, title string) {
 		//return
 	} else {
 		deepVisit(ne, f, dir, title)
+	}
+}
+
+// 下载图片
+func image(e *rod.Element, f *os.File, dir string) {
+	var b0, b1, b2 []byte
+
+	src, _ := e.Attribute("src")
+	if src == nil {
+		src = new(string)
+	}
+	log.Info("图片：", *src)
+
+	if strings.HasPrefix(*src, "http") {
+		//tp=webp 替换为 tp=nowebp
+		//		if strings.Contains(newSrc, "tp=webp") {
+		//			newSrc = strings.ReplaceAll(newSrc, "tp=webp", "tp=nowebp")
+		//			log.Info("图片新地址：", newSrc)
+		//		} else {
+		b1 = e.MustResource()
+		//		}
+	}
+
+	dataSrc, _ := e.Attribute("data-src")
+	if dataSrc == nil {
+		dataSrc = new(string)
+	}
+	log.Info("图片：", *dataSrc)
+	if strings.Contains(*dataSrc, "tp=webp") {
+		tsrc := strings.ReplaceAll(*dataSrc, "tp=webp", "tp=nowebp")
+		dataSrc = &tsrc
+		log.Info("图片新地址：", *dataSrc)
+	}
+
+	if strings.HasPrefix(*dataSrc, "https") {
+		req, err := http.NewRequest("GET", *dataSrc, nil)
+		if err != nil {
+			log.Error("http发送失败：", err)
+		} else {
+			tls11Transport := &http.Transport{
+				TLSClientConfig: &tls.Config{
+					InsecureSkipVerify: true,
+				},
+			}
+			client := &http.Client{
+				Transport: tls11Transport,
+			}
+			res, err := client.Do(req)
+			if err != nil {
+				log.Error("http发送失败：", err)
+			} else {
+				defer res.Body.Close()
+				b2, err = ioutil.ReadAll(res.Body)
+				if err != nil {
+					log.Error("http读取结果失败：", err)
+				}
+			}
+		}
+	} else if strings.HasPrefix(*dataSrc, "http") {
+		res, err := http.Get(*dataSrc)
+		if err != nil {
+			log.Error("http发送失败：", err)
+		} else {
+			defer res.Body.Close()
+			b2, err = ioutil.ReadAll(res.Body)
+			if err != nil {
+				log.Error("http读取结果失败：", err)
+			}
+		}
+	}
+
+	if len(b1) > len(b2) {
+		b0 = b1
+	} else {
+		b0 = b2
+	}
+	if len(b0) > 0 {
+		rand.Seed(time.Now().UnixNano())
+		i := rand.Int31()
+		imgF := filepath.Join(dir, fmt.Sprintf("%d.jpg", i))
+		err := utils.OutputFile(imgF, b0)
+		if err != nil {
+			log.Error("生成图片失败：", err)
+		} else {
+			log.Info("生成图片：", imgF)
+		}
+		fmt.Fprintf(f, "![%d](.\\resource\\%d.jpg)\n", i, i)
+		fmt.Fprintf(f, "%s\n", *src)
+		fmt.Fprintf(f, "%s\n", *dataSrc)
 	}
 }
 
